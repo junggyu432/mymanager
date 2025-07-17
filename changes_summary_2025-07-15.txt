@@ -1,0 +1,48 @@
+## 변경 사항 요약 (2025년 7월 15일)
+
+### 1. `frontend/lib/presentation/bloc/planner_bloc/planner_bloc.dart`
+- `summarizeInput` 이벤트 핸들러에서 `PlannerState.inputSummarized`를 `PlannerState.summarized`로 변경하여 `PlannerState` 재설계에 맞췄습니다.
+
+### 2. `frontend/lib/presentation/pages/home_page.dart`
+- `HomePage`를 `StatefulWidget`에서 `StatelessWidget`으로 리팩토링했습니다.
+- UI 로직을 캡슐화하기 위해 `HomeView`라는 별도의 `StatefulWidget`을 도입했습니다.
+- 로컬 상태(`_summarizedData`) 및 `_handleCreateAction` 함수를 제거했습니다.
+- `BlocConsumer` 내의 UI 렌더링 로직을 `state.maybeWhen`을 사용하여 `loading`, `summarized`, `projectCreated`, `taskCreated`, `error` 상태에만 의존하도록 업데이트했습니다.
+- `_getToken` 헬퍼 함수를 `authState.maybeWhen`을 사용하여 `authenticated` 상태에서 토큰에 안전하게 접근하도록 수정했습니다.
+- `ElevatedButton`의 `onPressed` 및 `child` 로직을 `isLoading` 불리언을 직접 사용하도록 단순화했습니다.
+
+### 3. `frontend/lib/presentation/bloc/auth_bloc/auth_state.dart`
+- `authenticated` 팩토리 생성자를 `required String token` 및 `required ProfileModel user`를 포함하도록 수정했습니다.
+- `import 'package:frontend/data/models/profile_model.dart';`를 추가했습니다.
+
+### 4. `frontend/lib/domain/repositories/auth_repository.dart`
+- `signIn`의 반환 유형을 `Future<bool>`에서 `Future<Map<String, dynamic>?>`로 변경했습니다.
+- 추상 인터페이스에 `Future<ProfileModel?> getCurrentUserProfile();`를 추가했습니다.
+- `import 'package:frontend/data/models/profile_model.dart';`를 추가했습니다.
+
+### 5. `frontend/lib/data/datasources/auth_datasource.dart`
+- `signIn`의 반환 유형을 `Future<String?>`에서 `Future<AuthResponse>`로 변경했습니다.
+- `signIn` 메서드를 `accessToken`만 반환하는 대신 전체 `AuthResponse` 객체를 반환하도록 수정했습니다.
+
+### 6. `frontend/lib/data/repositories/auth_repository.dart`
+- `signIn` 구현을 `AuthResponse`에서 `accessToken` 및 `user`(ProfileModel로 변환)를 추출하여 `Map<String, dynamic>`으로 반환하도록 했습니다.
+- `getCurrentUserProfile()`을 구현하여 Supabase에서 현재 사용자의 `ProfileModel`을 가져오도록 했습니다.
+- `signIn` 및 `getCurrentUserProfile` 메���드 구현에서 `Profile`을 `ProfileModel`로 업데이트했습니다.
+
+### 7. `frontend/lib/presentation/bloc/auth_bloc/auth_bloc.dart`
+- `signIn` 이벤트 핸들러를 `authRepository.signIn` 결과에서 `token` 및 `ProfileModel`을 올바르게 추출하고 `AuthState.authenticated(token: token, user: user)`를 방출하도록 수정했습니다.
+- `signUp` 이벤트 핸들러를 성공적인 가입 후 `token` 및 `ProfileModel`을 가져와 `AuthState.authenticated(token: token, user: user)`를 방출하도록 수정했습니다.
+- `checkAuthStatus` 이벤트 핸들러를 `token` 및 `ProfileModel`을 모두 가져와 `AuthState.authenticated(token: token, user: user)`를 방출하도록 수정했습니다.
+
+### 8. `frontend/lib/domain/entities/profile_entity.dart`
+- `ProfileEntity` 클래스 및 해당 생성자에 `final String? email;`을 추가했습니다.
+
+### 9. `frontend/lib/data/models/profile_model.dart`
+- `ProfileModel` 클래스 및 해당 생성자에 `final String? email;`을 추가했습니다.
+- `ProfileModel.fromJson`을 `email` 필드를 구문 분석하도록 업데이트했습니다.
+- `toEntity()`를 `email` 필드를 포함하도록 업데이트했습니다.
+
+### 10. `frontend/lib/core/routes/router.dart`
+- `redirect` 함수에서 `isAuthenticated` 로직을 `maybeWhen`을 사용하여 `token` 및 `user` ���개변수와 함께 `AuthState.authenticated`를 올바르게 처리하도록 수정했습니다.
+
+이러한 변경 사항은 `gemini.md`의 지침을 기반으로 하며, 그 과정에서 발생한 모든 컴파일 오류를 해결했습니다. 현재 `flutter analyze`는 문제가 없음을 보고합니다.

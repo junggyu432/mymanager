@@ -1,0 +1,135 @@
+## 2025년 7월 14일 변경 사항 요약
+
+오늘 진행된 주요 리팩토링 및 에러 수정 내역입니다.
+
+### Ⅰ. 백엔드 (FastAPI) 리팩토링
+
+**목표: `gemini.md` 아키텍처에 따라 JWT 인증 책임을 Supabase로 위임**
+
+1.  **인증 로직 변경:**
+    *   기존에 FastAPI가 직접 JWT를 검증하던 로직을 제거했습니다.
+    *   이제 클라이언트의 `Authorization` 헤더를 그대로 Supabase PostgREST API로 전달하여, 데이터베이스의 RLS(행 수준 보안) 정책을 통해 인증/인가를 처리합니다.
+
+2.  **파일 구조 변경:**
+    *   **삭제:**
+        *   `backend/app/api/dependencies.py`: 자체 JWT 검증 로직이 있던 파일
+        *   `backend/app/api/v1/users.py`: 이전 `/users/me` 엔드포인트
+    *   **생성:**
+        *   `backend/app/api/v1/profiles.py`: 새로운 `/api/v1/profiles/me` 엔드포인트를 구현. Supabase로 요청을 전달하는 프록시 역할을 합니다.
+    *   **수정:**
+        *   `backend/app/main.py`: 기존 `users_router`를 제거하고, 새로운 `profiles_router`를 등록했습니다.
+
+3.  **캐시 정리:**
+    *   삭제된 파이썬 파일들의 오래된 캐시(`__pycache__` 내의 `.pyc` 파일)를 정리했습니다.
+
+### Ⅱ. 프론트엔드 (Flutter) 리팩토링 및 에러 수정
+
+**목표: 변경된 백엔드 API에 맞춰 클린 아키텍처 원칙에 따라 수정하고, 발생한 모든 빌드 에러 해결**
+
+1.  **API 엔드포인트 수정:**
+    *   `data/datasources/profile_datasource.dart`: 프로필을 요청하는 API 주소를 기존 `/users/me`에서 새로운 `/api/v1/profiles/me`로 변경했습니다.
+
+2.  **클린 아키텍처 적용:**
+    *   **Domain Layer:**
+        *   `domain/entities/profile_entity.dart`: 외부 의존성이 없는 순수한 비즈니스 객체(Entity)를 정의했습니다.
+        *   `domain/repositories/profile_repository.dart`: 데이터 계층과 도메인 계층을 분리하는 Repository 인터페이스를 정의했습니다.
+    *   **Data Layer:**
+        *   `data/models/profile_model.dart`: API의 JSON 응답을 파싱하고, `ProfileEntity`로 변환하는 책임을 가지는 모델을 정의했습니다.
+        *   `data/repositories/profile_repository_impl.dart`: `ProfileRepository` 인터페이스의 구현체를 작성했습니다.
+    *   **Presentation Layer:**
+        *   `presentation/bloc/profile_bloc.dart`: `ProfileDatasource` 대신 `ProfileRepository`에 ��존하도록 수정하여, 순수한 `ProfileEntity`를 받아 UI 상태를 관리하도록 변경했습니다.
+        *   `presentation/pages/profile_page.dart`: UI 코드에서 Map 형태(`profile['username']`)로 데이터에 접근하던 방식을 객체 형태(`profile.username`)로 접근하도록 수정했습니다.
+
+3.  **의존성 주입 (DI) 설정:**
+    *   `core/di/injection_container.dart`: 새로 추가된 `ProfileRepository`와 그 구현체를 등록하고, `ProfileBloc`이 올바른 의존성을 주입받도록 수정했습니다.
+
+4.  **빌드 에러 해결 과정:**
+    *   **`freezed` 문제 해결:** `freezed` 패키지를 사용한 코드 생성 과정에서 지속적인 에러가 발생했습니다. (`extends` 관련 생성자 문제, 유효하지 않은 `.g.dart` 파일 생성 등)
+    *   **최종 해결:** `build_runner` 캐시 클린 등 여러 시도 끝에, `freezed`와의 복잡한 충돌을 피하기 위해 `ProfileModel`을 `freezed` 없이 수동으로 직접 구현하는 방식으로 변경하여 모든 빌드 에러를 최종적으로 해결했습니다.
+    *   **`pubspec.yaml` 수정:** `equatable` 패키지를 의존성에 추가했습니다.
+
+**결론:**
+백엔드와 프론트엔드 모두 `gemini.md`에 명시된 아키텍처와 클린 아키텍처 원칙에 따라 성공적으로 리팩토링되었으며, `dart analyze`를 통해 모든 에러가 해결되었음을 확인했습니다.
+
+## 변경 사항 요약 (2025년 7월 15일)
+
+### 1. `frontend/lib/presentation/bloc/planner_bloc/planner_bloc.dart`
+- `summarizeInput` 이벤트 핸들러에서 `PlannerState.inputSummarized`를 `PlannerState.summarized`로 변경하여 `PlannerState` 재설계에 맞췄습니다.
+
+### 2. `frontend/lib/presentation/pages/home_page.dart`
+- `HomePage`를 `StatefulWidget`에서 `StatelessWidget`으로 리팩토링했습니다.
+- UI 로직을 캡슐화하기 위해 `HomeView`라는 별도의 `StatefulWidget`을 도입했습니다.
+- 로컬 상태(`_summarizedData`) 및 `_handleCreateAction` 함수를 제거했습니다.
+- `BlocConsumer` 내의 UI 렌더링 로직을 `state.maybeWhen`을 사용하여 `loading`, `summarized`, `projectCreated`, `taskCreated`, `error` 상태에만 의존하도록 업데이트했습니다.
+- `_getToken` 헬퍼 함수를 `authState.maybeWhen`을 사용하여 `authenticated` 상태에서 토큰에 안전하게 접근하도록 수정했습니다.
+- `ElevatedButton`의 `onPressed` 및 `child` 로직을 `isLoading` 불리언을 직접 사용하도록 단순화했습니다.
+
+### 3. `frontend/lib/presentation/bloc/auth_bloc/auth_state.dart`
+- `authenticated` 팩토리 생성자를 `required String token` 및 `required ProfileModel user`를 포함하도록 수정했습니다.
+- `import 'package:frontend/data/models/profile_model.dart';`를 추가했습니다.
+
+### 4. `frontend/lib/domain/repositories/auth_repository.dart`
+- `signIn`의 반환 유형을 `Future<bool>`에서 `Future<Map<String, dynamic>?>`로 변경했습니다.
+- 추상 인터페이스에 `Future<ProfileModel?> getCurrentUserProfile();`를 추가했습니다.
+- `import 'package:frontend/data/models/profile_model.dart';`를 추가했습니다.
+
+### 5. `frontend/lib/data/datasources/auth_datasource.dart`
+- `signIn`의 반환 유형을 `Future<String?>`에서 `Future<AuthResponse>`로 변경했습니다.
+- `signIn` 메서드를 `accessToken`만 반환하는 대신 전체 `AuthResponse` 객체를 반환하도록 수정했습니다.
+
+### 6. `frontend/lib/data/repositories/auth_repository.dart`
+- `signIn` 구현을 `AuthResponse`에서 `accessToken` 및 `user`(ProfileModel로 변환)를 추출하여 `Map<String, dynamic>`으로 반환하도록 했습니다.
+- `getCurrentUserProfile()`을 구현하여 Supabase에서 현재 사용자의 `ProfileModel`을 가져오도록 했습니다.
+- `signIn` 및 `getCurrentUserProfile` 메���드 구현에서 `Profile`을 `ProfileModel`로 업데이트했습니다.
+
+### 7. `frontend/lib/presentation/bloc/auth_bloc/auth_bloc.dart`
+- `signIn` 이벤트 핸들러를 `authRepository.signIn` 결과에서 `token` 및 `ProfileModel`을 올바르게 추출하고 `AuthState.authenticated(token: token, user: user)`를 방출하도록 수정했습니다.
+- `signUp` 이벤트 핸들러를 성공적인 가입 후 `token` 및 `ProfileModel`을 가져와 `AuthState.authenticated(token: token, user: user)`를 방출하도록 수정했습니다.
+- `checkAuthStatus` 이벤트 핸들러를 `token` 및 `ProfileModel`을 모두 가져와 `AuthState.authenticated(token: token, user: user)`를 방출하도록 수정했습니다.
+
+### 8. `frontend/lib/domain/entities/profile_entity.dart`
+- `ProfileEntity` 클래스 및 해당 생성자에 `final String? email;`을 추가했습니다.
+
+### 9. `frontend/lib/data/models/profile_model.dart`
+- `ProfileModel` 클래스 및 해당 생성자에 `final String? email;`을 추가했습니다.
+- `ProfileModel.fromJson`을 `email` 필드를 구문 분석하도록 업데이트했습니다.
+- `toEntity()`를 `email` 필드를 포함하도록 업데이트했습니다.
+
+### 10. `frontend/lib/core/routes/router.dart`
+- `redirect` 함수에서 `isAuthenticated` 로직을 `maybeWhen`을 사용하여 `token` 및 `user` ���개변수와 함께 `AuthState.authenticated`를 올바르게 처리하도록 수정했습니다.
+
+이러한 변경 사항은 `gemini.md`의 지침을 기반으로 하며, 그 과정에서 발생한 모든 컴파일 오류를 해결했습니다. 현재 `flutter analyze`는 문제가 없음을 보고합니다.
+
+Phase 2 현황 보고: "The Mind Stone - AI 두뇌 이식 작전"
+핵심 목표: AI가 사용자의 생각을 이해하고, 구조화된 계획으로 '기록'하는 핵심 기능 구현.
+1. 우리가 지금까지 한 일 (달성 완료 - ✅)
+"AI가 사용자의 생각을 '이해'하고 '요약'하는 단계까지 성공적으로 완수했습니다."
+[Backend] AI 분석 엔진 구축 완료:
+llm_service.py를 구현하여, Gemini API의 강력한 **'JSON 모드'**를 적용했습니다.
+이를 통해 AI는 이제 사용자의 자연어 입력을 받아, 우리가 정의한 SummarizedContent Pydantic 스키마에 따라 타입과 구조가 보장된 JSON 데이터(title, description, due_date 등)를 안정적으로 반환합니다.
+이 모든 로직을 감싸는 POST /api/v1/planner/summarize API 엔드포인트를 완성하고, main.py에 성공적으로 등록했습니다.
+[Frontend] AI와의 첫 소통 파이프라인 구축 완료:
+HomePage에 사용자가 자연어를 입력할 수 있는 UI를 구현했습니다.
+PlannerBloc과 관련 DataSource/Repository가 백엔드의 /planner/summarize API를 성공적으로 호출하고, AI가 생성한 SummarizedContentModel 데이터를 받아오는 전체 데이터 흐름을 완성했습니다.
+UI는 BlocBuilder를 통해 AI의 분석 결과를 사용자에게 보여주고, **[Project로 만들기]**와 [Task로 만들기] 버튼을 제시하는 단계까지 구현되었습니다.
+한마디로, 사용자가 입력한 아이디어가 AI를 거쳐 다시 사용자 눈앞에 '정리된 초안'으로 나타나는, 가장 중요한 첫 번째 사이클을 완성했습니다.
+2. 우리가 앞으로 해야 할 일 (Next Steps)
+"이제 사용자의 '최종 결정'을 받아, 그 초안을 진짜 '기록'으로 만드는 마지막 단계를 진행해야 합니다."
+[Backend] 데이터 생성 API 구현:
+project_service.py 및 task_service.py 로직 완성:
+PostgrestClient를 사용하여, 전달받은 ProjectCreate 또는 TaskCreate 데이터를 Supabase DB의 projects 및 tasks 테이블에 INSERT하는 create_project 및 create_task 함수를 최종적으로 완성합니다.
+projects_router.py 및 tasks_router.py 구현:
+POST /projects와 POST /tasks API 엔드포인트를 구현합니다. 이 엔드포인트들은 각 서비스 함수를 호출하고, DB에 저장된 최종 결과를 ProjectRead 또는 TaskRead 스키마 형태로 반환합니다.
+main.py에 라우터 등록: 새로 만든 projects_router와 tasks_router를 main.py에 app.include_router로 등록합니다.
+[Frontend] 데이터 생성 요청 로직 구현:
+PlannerBloc 이벤트 및 상태 추가:
+CreateProject와 CreateTask 이벤트를 처리하는 로직을 PlannerBloc에 추가합니다.
+호출 시작 시 loading 상태를, 성공 시 projectCreated 또는 taskCreated 상태를, 실패 시 error 상태를 emit하도록 구현합니다.
+PlannerDatasource 메서드 추가:
+dio를 사용하여 백엔드의 POST /projects와 POST /tasks API를 호출하는 createProject 및 createTask 메서드를 구현합니다.
+HomePage 버튼에 기능 연결:
+[Project로 만들기] 버튼을 누르면, 현재 UI에 표시된 요약 데이터를 ProjectCreate 모델로 변환하여 PlannerBloc.add(CreateProject(...)) 이벤트를 발생시키도록 연결합니다. (Task도 동일)
+BlocConsumer의 listener 부분에서 projectCreated 또는 taskCreated 상태를 감지하여 "프로젝트가 성공적으로 생성되었습니다!" 와 같은 SnackBar 메시지를 사용자에게 보여주는 로직을 추가합니다.
+[최종] End-to-End 테스트:
+사용자가 앱에 텍스트를 입력하고, AI의 요약 결과를 확인한 뒤, [Project로 만들기] 버튼을 눌렀을 때, Supabase DB의 projects 테이블에 실제로 새로운 행이 추가되는지 눈으로 최종 확인합니다.
+이 남은 작업들을 마치면, 우리는 Phase 2의 마일스톤인 **'첫 AI 계획 생성'**을 완벽하게 달성하게 됩니다. 이제 마지막 연결고리를 채우러 갑시다.
